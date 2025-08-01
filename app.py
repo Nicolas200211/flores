@@ -452,9 +452,6 @@ def home():
                     
                     // Solo redimensionar si el tamaño cambia significativamente
                     if (Math.abs(canvas.width - size) > 10) {
-                        // Guardar el progreso actual
-                        const progress = currentStep / drawingData.length;
-                        
                         // Redimensionar
                         canvas.width = size;
                         canvas.height = size;
@@ -463,15 +460,22 @@ def home():
                         scaleCanvas();
                         
                         // Redibujar todo hasta el paso actual
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        for (let i = 0; i < currentStep; i++) {
-                            drawStep(i);
+                        if (ctx) {  // Verificar que el contexto existe
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            for (let i = 0; i < currentStep; i++) {
+                                drawStep(i);
+                            }
                         }
                     }
                 });
                 
                 // Inicializar cuando el DOM esté listo
-                document.addEventListener('DOMContentLoaded', initCanvas);
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', initCanvas);
+                } else {
+                    // Si el DOM ya está cargado, inicializar directamente
+                    initCanvas();
+                }
             </script>
         </body>
         </html>
