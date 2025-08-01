@@ -13,6 +13,10 @@ from matplotlib.path import Path
 app = Flask(__name__)
 
 def create_flower():
+    """
+    Lee el archivo de Word con las coordenadas y colores de la flor.
+    Devuelve una tupla (coordinates, colours) o (None, None) en caso de error.
+    """
     try:
         # Leer el documento con las coordenadas
         source = "tulipanes_actualizado"
@@ -40,75 +44,52 @@ def create_flower():
                     
                 color_val = re.findall(r'[-+]?\d*\.\d*', color_stg_tup[0])
                 color_val_lst = [float(k) for k in color_val]
-                colours.append(tuple(color_val_lst))
                 
-                # Procesar coordenadas
-                for j in coord_stg_tup:
-                    coord_pos = re.findall(r'[-+]?\d*\.\d*', j)
-                    coord_num_lst = [float(k) for k in coord_pos]
-                    coord_num_tup.append(tuple(coord_num_lst))
-                
-                coordinates.append(coord_num_tup)
+                # Solo agregar el color si hay coordenadas válidas
+                if coord_stg_tup:
+                    # Asegurarse de que los valores de color estén entre 0 y 1
+                    normalized_color = []
+                    for c in color_val_lst[:3]:  # Solo tomamos los primeros 3 valores (RGB)
+                        c_float = float(c)
+                        if c_float > 1.0 and c_float <= 255.0:  # Si está en rango 0-255, normalizar
+                            c_float = c_float / 255.0
+                        normalized_color.append(max(0.0, min(1.0, c_float)))  # Asegurar entre 0 y 1
+                    
+                    # Asegurarse de que tenemos 3 componentes de color
+                    while len(normalized_color) < 3:
+                        normalized_color.append(0.0)  # Rellenar con negro si faltan componentes
+                    
+                    colours.append(tuple(normalized_color[:3]))  # Tomar solo RGB (ignorar alpha si existe)
+                    
+                    # Procesar coordenadas
+                    for j in coord_stg_tup:
+                        coord_pos = re.findall(r'[-+]?\d*\.\d*', j)
+                        if len(coord_pos) >= 2:  # Asegurarse de que hay al menos x e y
+                            try:
+                                x = float(coord_pos[0])
+                                y = float(coord_pos[1])
+                                coord_num_tup.append((x, y))
+                            except (ValueError, IndexError) as e:
+                                print(f"Error convirtiendo coordenadas: {e}")
+                                continue
+                    
+                    if coord_num_tup:  # Solo agregar si hay coordenadas válidas
+                        coordinates.append(coord_num_tup)
                 
             except Exception as e:
                 print(f"Error procesando párrafo: {e}")
                 continue
         
+        # Verificar que tenemos datos válidos
+        if not coordinates or not colours:
+            print("No se encontraron coordenadas o colores válidos")
+            return None, None
+            
         return coordinates, colours
         
     except Exception as e:
         print(f"Error al leer el archivo: {e}")
         return None, None
-
-    # Crear una figura de Matplotlib
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.set_aspect('equal')
-    ax.axis('off')  # Ocultar ejes
-    
-    # Encontrar límites para escalar correctamente
-    all_points = [point for sublist in coordinates for point in sublist if sublist]
-    if not all_points:
-        return None
-        
-    x_coords = [p[0] for p in all_points]
-    y_coords = [p[1] for p in all_points]
-    
-    # Agregar un pequeño margen
-    x_margin = (max(x_coords) - min(x_coords)) * 0.1
-    y_margin = (max(y_coords) - min(y_coords)) * 0.1
-    
-    ax.set_xlim(min(x_coords) - x_margin, max(x_coords) + x_margin)
-    ax.set_ylim(min(y_coords) - y_margin, max(y_coords) + y_margin)
-    
-    # Dibujar cada línea
-    for i, points in enumerate(coordinates):
-        if len(points) < 2:
-            continue
-            
-        try:
-            # Obtener color
-            color = colours[i % len(colours)]
-            color = tuple(min(1.0, max(0.0, c)) for c in color[:3])  # Asegurar valores entre 0 y 1
-            
-            # Crear un polígono cerrado
-            polygon = patches.Polygon(points, closed=True, 
-                                     facecolor=color, 
-                                     edgecolor='black',
-                                     linewidth=0.5)
-            ax.add_patch(polygon)
-            
-        except Exception as e:
-            print(f"Error dibujando polígono: {e}")
-            continue
-    
-    # Guardar la figura en un buffer
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=100)
-    plt.close(fig)
-    
-    # Convertir a base64 para mostrarla en la web
-    img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
-    buf.close()
 @app.route('/', methods=['GET', 'POST'])
 def home():
     try:
@@ -154,17 +135,45 @@ def home():
         ax.set_aspect('equal')
         ax.axis('off')
         
+        # Encontrar límites para escalar correctamente
+        all_points = [point for sublist in coordinates for point in sublist if sublist]
+        if all_points:  # Solo si hay puntos válidos
+            x_coords = [p[0] for p in all_points]
+            y_coords = [p[1] for p in all_points]
+            
+            # Agregar un pequeño margen
+            x_margin = (max(x_coords) - min(x_coords)) * 0.1
+            y_margin = (max(y_coords) - min(y_coords)) * 0.1
+            
+            ax.set_xlim(min(x_coords) - x_margin, max(x_coords) + x_margin)
+            ax.set_ylim(min(y_coords) - y_margin, max(y_coords) + y_margin)
+        
         # Dibujar cada forma
-        for coords, color in zip(coordinates, colours):
-            if not coords:
+        for i, coords in enumerate(coordinates):
+            if not coords or len(coords) < 2:
                 continue
-            x_vals = [x for x, y in coords]
-            y_vals = [y for x, y in coords]
-            ax.fill(x_vals, y_vals, color=[c/255 for c in color])
+                
+            try:
+                # Obtener el color correspondiente (usar módulo para evitar índices fuera de rango)
+                color = colours[i % len(colours)]
+                
+                # Crear un polígono cerrado
+                polygon = patches.Polygon(
+                    coords,
+                    closed=True,
+                    facecolor=color,
+                    edgecolor='none',
+                    linewidth=0.5
+                )
+                ax.add_patch(polygon)
+                
+            except Exception as e:
+                print(f"Error dibujando polígono: {e}")
+                continue
         
         # Guardar la imagen en un buffer
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
+        plt.savefig(img, format='png', bbox_inches='tight', pad_inches=0.1, dpi=100)
         plt.close(fig)
         img.seek(0)
         
@@ -210,6 +219,7 @@ def home():
                     max-width: 100%;
                     height: auto;
                     border-radius: 10px;
+                    max-height: 70vh;
                 }}
                 .message {{
                     margin-top: 25px;
