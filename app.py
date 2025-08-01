@@ -13,41 +13,52 @@ from matplotlib.path import Path
 app = Flask(__name__)
 
 def create_flower():
-    # Leer el documento con las coordenadas
-    source = "tulipanes_actualizado"
-    data = docx.Document(f"{source}.docx")
-    coordinates = []
-    colours = []
+    try:
+        # Leer el documento con las coordenadas
+        source = "tulipanes_actualizado"
+        data = docx.Document(f"{source}.docx")
+        coordinates = []
+        colours = []
 
-    for paragraph in data.paragraphs:
-        try:
-            # Extraer coordenadas
-            coord_stg_tup = re.findall(
-                r'\(([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\)', 
-                paragraph.text
-            )
-            
-            # Extraer colores
-            color_stg_tup = re.findall(
-                r'\(([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\)', 
-                paragraph.text
-            )
-            
-            if not coord_stg_tup or not color_stg_tup:
-                continue
+        for i in data.paragraphs:
+            try:
+                # Extraer coordenadas (usando la misma expresión regular que en tulipanes.py)
+                coord_stg_tup = re.findall(
+                    r'\([-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)?\)', 
+                    i.text
+                )
+                coord_num_tup = []
                 
-            # Convertir coordenadas a números
-            coord_num_tup = [(float(x), float(y)) for x, y in coord_stg_tup]
-            
-            # Convertir colores a tuplas de float
-            color_val = [float(x) for x in color_stg_tup[0]]
-            colours.append(tuple(color_val))
-            coordinates.append(coord_num_tup)
-            
-        except Exception as e:
-            print(f"Error procesando párrafo: {e}")
-            continue
-            pass
+                # Extraer colores (usando la misma expresión regular que en tulipanes.py)
+                color_stg_tup = re.findall(
+                    r'\([-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)?\)', 
+                    i.text
+                )
+                
+                if not color_stg_tup:
+                    continue
+                    
+                color_val = re.findall(r'[-+]?\d*\.\d*', color_stg_tup[0])
+                color_val_lst = [float(k) for k in color_val]
+                colours.append(tuple(color_val_lst))
+                
+                # Procesar coordenadas
+                for j in coord_stg_tup:
+                    coord_pos = re.findall(r'[-+]?\d*\.\d*', j)
+                    coord_num_lst = [float(k) for k in coord_pos]
+                    coord_num_tup.append(tuple(coord_num_lst))
+                
+                coordinates.append(coord_num_tup)
+                
+            except Exception as e:
+                print(f"Error procesando párrafo: {e}")
+                continue
+        
+        return coordinates, colours
+        
+    except Exception as e:
+        print(f"Error al leer el archivo: {e}")
+        return None, None
 
     # Crear una figura de Matplotlib
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -98,67 +109,191 @@ def create_flower():
     # Convertir a base64 para mostrarla en la web
     img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
     buf.close()
-    
-    return img_str
-
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def home():
     try:
-        img_str = create_flower()
-        if img_str is None:
-            return "No se pudieron cargar los datos de la flor."
-            
+        # Obtener las coordenadas y colores
+        coordinates, colours = create_flower()
+        
+        if not coordinates or not colours:
+            return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Error</title>
+                <style>
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        text-align: center; 
+                        padding: 50px; 
+                        background-color: #fff0f0;
+                    }
+                    .error { 
+                        color: #d32f2f; 
+                        background: #ffebee; 
+                        padding: 20px; 
+                        border-radius: 5px; 
+                        max-width: 600px; 
+                        margin: 0 auto;
+                        border: 1px solid #ef9a9a;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="error">
+                    <h1>¡Ups! Algo salió mal</h1>
+                    <p>No se pudieron cargar los datos de la flor. Por favor, verifica que el archivo 'tulipanes_actualizado.docx' esté en el directorio correcto.</p>
+                    <p>Si el problema persiste, por favor contacta al administrador.</p>
+                </div>
+            </body>
+            </html>
+            """
+        
+        # Crear la figura de Matplotlib
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_aspect('equal')
+        ax.axis('off')
+        
+        # Dibujar cada forma
+        for coords, color in zip(coordinates, colours):
+            if not coords:
+                continue
+            x_vals = [x for x, y in coords]
+            y_vals = [y for x, y in coords]
+            ax.fill(x_vals, y_vals, color=[c/255 for c in color])
+        
+        # Guardar la imagen en un buffer
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
+        plt.close(fig)
+        img.seek(0)
+        
+        # Convertir a base64
+        img_str = base64.b64encode(img.getvalue()).decode('utf-8')
+        
         return f'''
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Flores para ti</title>
+            <title>Flores para Ti</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
                 body {{
                     display: flex;
-                    justify-content: center;
+                    flex-direction: column;
                     align-items: center;
+                    justify-content: center;
                     min-height: 100vh;
                     margin: 0;
-                    background-color: #f8f9fa;
-                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    background-color: #f0f8ff;
+                    font-family: 'Arial', sans-serif;
                 }}
                 .container {{
                     text-align: center;
-                    padding: 2rem;
-                    background: white;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                    max-width: 90%;
+                    max-width: 800px;
+                    width: 100%;
                 }}
                 h1 {{
-                    color: #e83e8c;
-                    margin-bottom: 1.5rem;
+                    color: #ff69b4;
+                    margin-bottom: 20px;
+                    font-size: 2.5em;
+                }}
+                .flower-container {{
+                    background: white;
+                    padding: 20px;
+                    border-radius: 15px;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    margin: 20px 0;
                 }}
                 img {{
                     max-width: 100%;
                     height: auto;
-                    border-radius: 5px;
-                    margin: 1rem 0;
+                    border-radius: 10px;
                 }}
-                p {{
-                    color: #6c757d;
-                    font-size: 1.1rem;
-                    margin-top: 1.5rem;
+                .message {{
+                    margin-top: 25px;
+                    font-size: 1.3em;
+                    color: #333;
+                    line-height: 1.6;
+                }}
+                .signature {{
+                    margin-top: 15px;
+                    font-style: italic;
+                    color: #666;
+                }}
+                @media (max-width: 600px) {{
+                    h1 {{
+                        font-size: 2em;
+                    }}
+                    .message {{
+                        font-size: 1.1em;
+                    }}
                 }}
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>Un detalle para ti ❤️</h1>
-                <img src="data:image/png;base64,{img_str}" alt="Flores">
-                <p>¡Espero que te guste!</p>
+                <h1>¡Flores para ti! 💐</h1>
+                <div class="flower-container">
+                    <img src="data:image/png;base64,{img_str}" alt="Flor generada">
+                </div>
+                <div class="message">
+                    <p>Con todo mi cariño,</p>
+                    <div class="signature">
+                        <p>💖</p>
+                        <p>Para la persona más especial</p>
+                    </div>
+                </div>
             </div>
         </body>
         </html>
         '''
     except Exception as e:
-        return f"<h1>Error al generar la imagen: {str(e)}</h1>"
+        import traceback
+        error_msg = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Error</title>
+            <style>
+                body {{ 
+                    font-family: Arial, sans-serif; 
+                    text-align: center; 
+                    padding: 50px; 
+                    background-color: #fff0f0;
+                }}
+                .error {{ 
+                    color: #d32f2f; 
+                    background: #ffebee; 
+                    padding: 20px; 
+                    border-radius: 5px; 
+                    max-width: 800px; 
+                    margin: 0 auto;
+                    border: 1px solid #ef9a9a;
+                    text-align: left;
+                    white-space: pre-wrap;
+                    font-family: monospace;
+                }}
+                h1 {{ color: #b71c1c; }}
+            </style>
+        </head>
+        <body>
+            <h1>¡Error al generar la imagen!</h1>
+            <div class="error">
+                {str(e)}
+                
+                Traceback:
+                {traceback.format_exc()}
+            </div>
+        </body>
+        </html>
+        """
+        return error_msg
+
+@app.route('/health')
+def health_check():
+    return 'OK', 200
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=10000)
