@@ -54,10 +54,18 @@ def create_flower():
         
         # Dibujar la línea
         if len(points) > 1:
-            color = colour[i % len(colour)]
-            # Asegurarse de que el color esté en el rango 0-255
-            color = tuple(min(255, max(0, int(c * 255))) for c in color[:3])
-            draw.line(points, fill=color, width=2)
+            try:
+                color = colour[i % len(colour)]
+                # Asegurarse de que el color esté en el rango 0-255 y sea una tupla de 3 valores
+                if isinstance(color, (list, tuple)) and len(color) >= 3:
+                    r = min(255, max(0, int(color[0] * 255)))
+                    g = min(255, max(0, int(color[1] * 255)))
+                    b = min(255, max(0, int(color[2] * 255)))
+                    draw.line(points, fill=(r, g, b), width=2)
+            except Exception as e:
+                print(f"Error dibujando línea: {e}")
+                # Usar color rojo como respaldo
+                draw.line(points, fill=(255, 0, 0), width=2)
     
     # Guardar la imagen
     img.save('flor.png')
