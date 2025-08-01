@@ -428,11 +428,6 @@ def home():
                         startBtn.textContent = 'Comenzar animación';
                         startBtn.disabled = false;
                     }
-                    
-                    resetBtn.disabled = currentStep === 0 && !isDrawing;
-                }
-                
-                // Manejadores de eventos
                 document.getElementById('startBtn').addEventListener('click', () => {
                     if (isDrawing) {
                         stopDrawing();
@@ -447,6 +442,7 @@ def home():
                 
                 // Redimensionar el canvas cuando cambia el tamaño de la ventana
                 window.addEventListener('resize', () => {
+                    if (!canvas) return;
                     const container = canvas.parentElement;
                     const size = Math.min(container.clientWidth, window.innerHeight * 0.6, 800);
                     
@@ -468,14 +464,20 @@ def home():
                         }
                     }
                 });
-                
-                // Inicializar cuando el DOM esté listo
-                if (document.readyState === 'loading') {
-                    document.addEventListener('DOMContentLoaded', initCanvas);
-                } else {
-                    // Si el DOM ya está cargado, inicializar directamente
+            }
+            
+            // Inicializar cuando el DOM esté listo
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
                     initCanvas();
-                }
+                    setupEventListeners();
+                });
+            } else {
+                // Si el DOM ya está cargado, inicializar directamente
+                initCanvas();
+                setupEventListeners();
+            }
+            }
             </script>
         </body>
         </html>
