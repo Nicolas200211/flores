@@ -1,124 +1,164 @@
-from flask import Flask, send_file, render_template_string
-import turtle as tu
+from flask import Flask, send_file, render_template_string, Response
 import re
 import docx
 import io
-from PIL import Image, ImageDraw
 import base64
 import math
+import matplotlib
+matplotlib.use('Agg')  # Para usar sin interfaz gráfica
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.path import Path
 
 app = Flask(__name__)
 
 def create_flower():
-    # Tu código original para generar el dibujo
+    # Leer el documento con las coordenadas
     source = "tulipanes_actualizado"
     data = docx.Document(f"{source}.docx")
     coordinates = []
-    colour = []
+    colours = []
 
-    for i in data.paragraphs:
+    for paragraph in data.paragraphs:
         try:
-            coord_stg_tup = re.findall(r'\([-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)?\)', i.text)
-            coord_num_tup = []
-            color_stg_tup = re.findall(r'\([-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)? ?\, ?[-+]?\d*\.\d*(?:[eE][-+]?\d+)?\)', i.text)
-            color_val = re.findall(r'[-+]?\d*\.\d*', color_stg_tup[0])
-            color_val_lst = [float(k) for k in color_val]
-            colour.append(tuple(color_val_lst))
-
-            for j in coord_stg_tup:
-                coord_pos = re.findall(r'[-+]?\d*\.\d*', j)
-                coord_num_lst = [float(k) for k in coord_pos]
-                coord_num_tup.append(tuple(coord_num_lst))
-
+            # Extraer coordenadas
+            coord_stg_tup = re.findall(
+                r'\(([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\)', 
+                paragraph.text
+            )
+            
+            # Extraer colores
+            color_stg_tup = re.findall(
+                r'\(([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\s*,\s*([-+]?\d*\.\d+(?:[eE][-+]?\d+)?)\)', 
+                paragraph.text
+            )
+            
+            if not coord_stg_tup or not color_stg_tup:
+                continue
+                
+            # Convertir coordenadas a números
+            coord_num_tup = [(float(x), float(y)) for x, y in coord_stg_tup]
+            
+            # Convertir colores a tuplas de float
+            color_val = [float(x) for x in color_stg_tup[0]]
+            colours.append(tuple(color_val))
             coordinates.append(coord_num_tup)
-        except:
+            
+        except Exception as e:
+            print(f"Error procesando párrafo: {e}")
+            continue
             pass
 
-    # Crear una imagen directamente con Pillow
-    width, height = 800, 600
-    img = Image.new('RGB', (width, height), 'white')
-    draw = ImageDraw.Draw(img)
+    # Crear una figura de Matplotlib
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_aspect('equal')
+    ax.axis('off')  # Ocultar ejes
     
-    # Dibujar las flores
-    for i in range(len(coordinates)):
-        if len(coordinates[i]) < 2:
+    # Encontrar límites para escalar correctamente
+    all_points = [point for sublist in coordinates for point in sublist if sublist]
+    if not all_points:
+        return None
+        
+    x_coords = [p[0] for p in all_points]
+    y_coords = [p[1] for p in all_points]
+    
+    # Agregar un pequeño margen
+    x_margin = (max(x_coords) - min(x_coords)) * 0.1
+    y_margin = (max(y_coords) - min(y_coords)) * 0.1
+    
+    ax.set_xlim(min(x_coords) - x_margin, max(x_coords) + x_margin)
+    ax.set_ylim(min(y_coords) - y_margin, max(y_coords) + y_margin)
+    
+    # Dibujar cada línea
+    for i, points in enumerate(coordinates):
+        if len(points) < 2:
             continue
             
-        # Convertir coordenadas para Pillow
-        points = []
-        for x, y in coordinates[i]:
-            # Ajustar las coordenadas al centro de la imagen
-            px = int(x * 2 + width/2)
-            py = int(-y * 2 + height/2)  # Invertir Y para que sea como en turtle
-            points.append((px, py))
-        
-        # Dibujar la línea
-        if len(points) > 1:
-            try:
-                color = colour[i % len(colour)]
-                # Asegurarse de que el color esté en el rango 0-255 y sea una tupla de 3 valores
-                if isinstance(color, (list, tuple)) and len(color) >= 3:
-                    r = min(255, max(0, int(color[0] * 255)))
-                    g = min(255, max(0, int(color[1] * 255)))
-                    b = min(255, max(0, int(color[2] * 255)))
-                    draw.line(points, fill=(r, g, b), width=2)
-            except Exception as e:
-                print(f"Error dibujando línea: {e}")
-                # Usar color rojo como respaldo
-                draw.line(points, fill=(255, 0, 0), width=2)
+        try:
+            # Obtener color
+            color = colours[i % len(colours)]
+            color = tuple(min(1.0, max(0.0, c)) for c in color[:3])  # Asegurar valores entre 0 y 1
+            
+            # Crear un polígono cerrado
+            polygon = patches.Polygon(points, closed=True, 
+                                     facecolor=color, 
+                                     edgecolor='black',
+                                     linewidth=0.5)
+            ax.add_patch(polygon)
+            
+        except Exception as e:
+            print(f"Error dibujando polígono: {e}")
+            continue
     
-    # Guardar la imagen
-    img.save('flor.png')
-    return 'flor.png'
+    # Guardar la figura en un buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=100)
+    plt.close(fig)
+    
+    # Convertir a base64 para mostrarla en la web
+    img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
+    buf.close()
+    
+    return img_str
 
 @app.route('/')
-def index():
-    # Generar la imagen
-    image_path = create_flower()
-    
-    # Leer la imagen y mostrarla
-    with open(image_path, 'rb') as f:
-        image_data = f.read()
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Flores para ti</title>
-        <style>
-            body {{
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                flex-direction: column;
-                height: 100vh;
-                margin: 0;
-                background-color: #f0f8ff;
-                font-family: Arial, sans-serif;
-            }}
-            img {{
-                max-width: 90%;
-                max-height: 80vh;
-                box-shadow: 0 0 10px rgba(0,0,0,0.2);
-                margin-bottom: 20px;
-            }}
-            h1 {{
-                color: #ff69b4;
-                margin-bottom: 20px;
-                text-align: center;
-            }}
-        </style>
-    </head>
-    <body>
-        <h1>¡Estas flores son para ti! 💐</h1>
-        <img src="/flor" alt="Flores dibujadas con Python">
-    </body>
-    </html>
-    """
-
-@app.route('/flor')
-def get_flower():
-    return send_file('flor.png', mimetype='image/png')
+def home():
+    try:
+        img_str = create_flower()
+        if img_str is None:
+            return "No se pudieron cargar los datos de la flor."
+            
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Flores para ti</title>
+            <style>
+                body {{
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
+                    margin: 0;
+                    background-color: #f8f9fa;
+                    font-family: Arial, sans-serif;
+                }}
+                .container {{
+                    text-align: center;
+                    padding: 2rem;
+                    background: white;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                    max-width: 90%;
+                }}
+                h1 {{
+                    color: #e83e8c;
+                    margin-bottom: 1.5rem;
+                }}
+                img {{
+                    max-width: 100%;
+                    height: auto;
+                    border-radius: 5px;
+                    margin: 1rem 0;
+                }}
+                p {{
+                    color: #6c757d;
+                    font-size: 1.1rem;
+                    margin-top: 1.5rem;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Un detalle para ti ❤️</h1>
+                <img src="data:image/png;base64,{img_str}" alt="Flores">
+                <p>¡Espero que te guste!</p>
+            </div>
+        </body>
+        </html>
+        '''
+    except Exception as e:
+        return f"<h1>Error al generar la imagen: {str(e)}</h1>"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(debug=True, host='0.0.0.0', port=10000)
