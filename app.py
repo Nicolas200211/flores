@@ -141,12 +141,19 @@ def home():
             x_coords = [p[0] for p in all_points]
             y_coords = [p[1] for p in all_points]
             
-            # Agregar un pequeño margen
-            x_margin = (max(x_coords) - min(x_coords)) * 0.1
-            y_margin = (max(y_coords) - min(y_coords)) * 0.1
+            # Calcular el centro y el tamaño
+            x_center = (min(x_coords) + max(x_coords)) / 2
+            y_center = (min(y_coords) + max(y_coords)) / 2
+            width = max(x_coords) - min(x_coords)
+            height = max(y_coords) - min(y_coords)
             
-            ax.set_xlim(min(x_coords) - x_margin, max(x_coords) + x_margin)
-            ax.set_ylim(min(y_coords) - y_margin, max(y_coords) + y_margin)
+            # Usar el máximo entre ancho y alto para hacerlo cuadrado
+            size = max(width, height) * 1.2  # 20% de margen
+            
+            # Establecer límites centrados
+            ax.set_xlim(x_center - size/2, x_center + size/2)
+            # Invertir el eje Y para que coincida con el sistema de Turtle
+            ax.set_ylim(y_center + size/2, y_center - size/2)
         
         # Dibujar cada forma
         for i, coords in enumerate(coordinates):
@@ -158,14 +165,26 @@ def home():
                 color = colours[i % len(colours)]
                 
                 # Crear un polígono cerrado
-                polygon = patches.Polygon(
-                    coords,
-                    closed=True,
-                    facecolor=color,
-                    edgecolor='none',
-                    linewidth=0.5
-                )
-                ax.add_patch(polygon)
+                # Asegurarse de que hay al menos 3 puntos para un polígono
+                if len(coords) >= 3:
+                    polygon = patches.Polygon(
+                        coords,
+                        closed=True,
+                        facecolor=color,
+                        edgecolor='none',
+                        linewidth=0.5,
+                        joinstyle='round'
+                    )
+                    ax.add_patch(polygon)
+                # Si solo hay 2 puntos, dibujar una línea
+                elif len(coords) == 2:
+                    line = patches.Polygon(
+                        coords,
+                        closed=False,
+                        color=color,
+                        linewidth=1.0
+                    )
+                    ax.add_patch(line)
                 
             except Exception as e:
                 print(f"Error dibujando polígono: {e}")
